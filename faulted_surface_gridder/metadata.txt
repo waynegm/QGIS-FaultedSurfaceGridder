@@ -1,0 +1,15 @@
+[general]
+name=Faulted Surface Gridder
+description=Scattered point interpolation of geological/geophysical horizons to a regular grid with fault constraints (IDW, thin plate spline)
+version=0.1.0
+qgisMinimumVersion=4.0
+qgisMaximumVersion=4.99
+author=FaultedSurfaceGridder contributors
+email=
+homepage=
+tracker=
+repository=
+category=Raster
+hasProcessingProvider=yes
+experimental=False
+deprecated=False
