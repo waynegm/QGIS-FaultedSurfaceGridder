@@ -1,7 +1,7 @@
-"""Faulted Surface Gridder plugin entry point."""
+"""Faulted Surface Gridding plugin entry point."""
 
 
-def classFactory(iface):  # noqa: N802 - QGIS-required name
-    from .plugin import FaultedSurfaceGridderPlugin
+def classFactory(iface):
+    from .plugin import FaultedSurfaceGriddingPlugin
 
-    return FaultedSurfaceGridderPlugin(iface)
+    return FaultedSurfaceGriddingPlugin(iface)
