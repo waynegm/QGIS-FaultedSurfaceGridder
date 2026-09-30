@@ -174,14 +174,23 @@ def get_fault_polygons(algo: QgsProcessingAlgorithm, parameters, context, target
     )
 
 
-def build_point_spatial_index(points_xyv):
+def build_point_spatial_index(points_xyv, feedback=None,
+                              progress_base=0.0, progress_span=100.0):
     """Build a fresh point index; id of each feature is its row in points_xyv."""
+    _set_progress(feedback, progress_base)
     index = QgsSpatialIndex()
+    total = len(points_xyv)
+    tick = max(1, total // 50)
     for idx, (x, y, _v) in enumerate(points_xyv):
+        if idx % 256 == 0 and _is_canceled(feedback):
+            raise PreparationCanceled()
         f = QgsFeature()
         f.setGeometry(QgsGeometry.fromPointXY(QgsPointXY(float(x), float(y))))
         f.setId(idx)
         index.addFeature(f)
+        if total and idx % tick == 0:
+            _set_progress(feedback, progress_base + progress_span * (idx + 1) / total)
+    _set_progress(feedback, progress_base + progress_span)
     return index
 
 
@@ -205,6 +214,27 @@ def _as_point_xy(p) -> QgsPointXY:
     if isinstance(p, QgsPointXY):
         return p
     return QgsPointXY(float(p[0]), float(p[1]))
+
+
+class PreparationCanceled(Exception):
+    """Raised when feedback.isCanceled() aborts fault-grid preparation."""
+
+
+def _is_canceled(feedback) -> bool:
+    try:
+        return bool(feedback is not None and feedback.isCanceled())
+    except Exception:
+        return False
+
+
+def _set_progress(feedback, percent: float):
+    if feedback is None:
+        return
+    try:
+        p = min(100.0, max(0.0, float(percent)))
+        feedback.setProgress(p)
+    except Exception:
+        pass
 
 
 def fault_between(fault_line_geoms, fault_poly_geoms, point_a, point_b,
@@ -352,7 +382,8 @@ def _window_from_bbox(spec: GridSpec, nrows: int, ncols: int,
     return r0, r1, c0, c1
 
 
-def build_fault_blocks(gridspec: GridSpec, fault_line_geoms, fault_poly_geoms):
+def build_fault_blocks(gridspec: GridSpec, fault_line_geoms, fault_poly_geoms,
+                       feedback=None, progress_base=0.0, progress_span=100.0):
     """Rasterize faults and flood-fill fault blocks.
 
     Returns dict with:
@@ -364,6 +395,9 @@ def build_fault_blocks(gridspec: GridSpec, fault_line_geoms, fault_poly_geoms):
         4-connectivity (diagonal walls still block). Partial faults that do
         not span the grid leave a path around the tip, so both sides share
         one block id there — by design.
+
+    Progress occupies [progress_base, progress_base + progress_span];
+    raises PreparationCanceled if feedback is canceled.
     """
     from scipy.ndimage import label as nd_label
 
@@ -376,15 +410,33 @@ def build_fault_blocks(gridspec: GridSpec, fault_line_geoms, fault_poly_geoms):
     barrier = np.zeros((nrows, ncols), dtype=bool)
     nodata = np.zeros((nrows, ncols), dtype=bool)
 
+    # Pre-expand so progress can be shared fairly across units of work.
+    poly_parts = [(g, _polygon_parts(g)) for g in polys]
+    line_segs = []
+    for g in lines:
+        for lx, ly in _polyline_parts(g):
+            for k in range(len(lx) - 1):
+                line_segs.append((lx[k], ly[k], lx[k + 1], ly[k + 1]))
+    total = sum(len(parts) for _, parts in poly_parts) + len(line_segs) + 1
+    done = 0
+
+    def _tick():
+        nonlocal done
+        done += 1
+        _set_progress(feedback, progress_base + progress_span * done / total)
+
     # Fault polygons: interiors (+boundaries) are barrier and NoData.
-    for g in polys:
-        for ox, oy, holes in _polygon_parts(g):
+    for _g, parts in poly_parts:
+        for ox, oy, holes in parts:
+            if _is_canceled(feedback):
+                raise PreparationCanceled()
             win = _window_from_bbox(
                 gridspec, nrows, ncols,
                 float(np.min(ox)), float(np.max(ox)),
                 float(np.min(oy)), float(np.max(oy)),
             )
             if win is None:
+                _tick()
                 continue
             r0, r1, c0, c1 = win
             subx = nodes_x[r0:r1 + 1, c0:c1 + 1].ravel()
@@ -396,44 +448,50 @@ def build_fault_blocks(gridspec: GridSpec, fault_line_geoms, fault_poly_geoms):
                 sel = inside.reshape((r1 - r0 + 1, c1 - c0 + 1))
                 barrier[r0:r1 + 1, c0:c1 + 1][sel] = True
                 nodata[r0:r1 + 1, c0:c1 + 1][sel] = True
+            _tick()
 
     # Fault lines: cells within tol of any segment are barrier + NoData.
-    for g in lines:
-        for lx, ly in _polyline_parts(g):
-            for k in range(len(lx) - 1):
-                x1, y1, x2, y2 = lx[k], ly[k], lx[k + 1], ly[k + 1]
-                win = _window_from_bbox(
-                    gridspec, nrows, ncols,
-                    min(x1, x2), max(x1, x2), min(y1, y2), max(y1, y2),
-                    pad=tol,
-                )
-                if win is None:
-                    continue
-                r0, r1, c0, c1 = win
-                subx = nodes_x[r0:r1 + 1, c0:c1 + 1]
-                suby = nodes_y[r0:r1 + 1, c0:c1 + 1]
-                dx, dy = x2 - x1, y2 - y1
-                denom = dx * dx + dy * dy
-                if denom == 0:
-                    dist = np.hypot(subx - x1, suby - y1)
-                else:
-                    t = ((subx - x1) * dx + (suby - y1) * dy) / denom
-                    t = np.clip(t, 0.0, 1.0)
-                    dist = np.hypot(subx - (x1 + t * dx), suby - (y1 + t * dy))
-                hit = dist <= tol
-                if hit.any():
-                    barrier[r0:r1 + 1, c0:c1 + 1][hit] = True
-                    nodata[r0:r1 + 1, c0:c1 + 1][hit] = True
+    for x1, y1, x2, y2 in line_segs:
+        if _is_canceled(feedback):
+            raise PreparationCanceled()
+        win = _window_from_bbox(
+            gridspec, nrows, ncols,
+            min(x1, x2), max(x1, x2), min(y1, y2), max(y1, y2),
+            pad=tol,
+        )
+        if win is None:
+            _tick()
+            continue
+        r0, r1, c0, c1 = win
+        subx = nodes_x[r0:r1 + 1, c0:c1 + 1]
+        suby = nodes_y[r0:r1 + 1, c0:c1 + 1]
+        dx, dy = x2 - x1, y2 - y1
+        denom = dx * dx + dy * dy
+        if denom == 0:
+            dist = np.hypot(subx - x1, suby - y1)
+        else:
+            t = ((subx - x1) * dx + (suby - y1) * dy) / denom
+            t = np.clip(t, 0.0, 1.0)
+            dist = np.hypot(subx - (x1 + t * dx), suby - (y1 + t * dy))
+        hit = dist <= tol
+        if hit.any():
+            barrier[r0:r1 + 1, c0:c1 + 1][hit] = True
+            nodata[r0:r1 + 1, c0:c1 + 1][hit] = True
+        _tick()
 
+    if _is_canceled(feedback):
+        raise PreparationCanceled()
     structure = np.array(
         [[0, 1, 0], [1, 1, 1], [0, 1, 0]], dtype=int
     )  # 4-connectivity: diagonal barrier cells still separate blocks
     block_ids, _n = nd_label(~barrier, structure=structure)
+    _tick()
     return {"barrier": barrier, "nodata_mask": nodata, "block_ids": block_ids}
 
 
 def assign_point_blocks(points_xyv, gridspec: GridSpec, block_ids,
-                        fault_line_geoms, fault_poly_geoms):
+                        fault_line_geoms, fault_poly_geoms,
+                        feedback=None, progress_base=0.0, progress_span=100.0):
     """Assign each sample its fault-block id; exclude unusable samples.
 
     Excluded (valid=False): points inside a fault polygon, or within
@@ -441,6 +499,9 @@ def assign_point_blocks(points_xyv, gridspec: GridSpec, block_ids,
     Out-of-extent points are clamped to the nearest edge cell — harmless
     because the node search radius (step) means only near-edge points are
     ever queried.
+
+    Progress occupies [progress_base, progress_base + progress_span];
+    raises PreparationCanceled if feedback is canceled.
     """
     lines = _as_geom_list(fault_line_geoms)
     polys = _as_geom_list(fault_poly_geoms)
@@ -451,6 +512,7 @@ def assign_point_blocks(points_xyv, gridspec: GridSpec, block_ids,
     point_blocks = np.zeros(n, dtype=int)
     point_valid = np.zeros(n, dtype=bool)
     if n == 0:
+        _set_progress(feedback, progress_base + progress_span)
         return point_blocks, point_valid
 
     poly_engines = []
@@ -462,32 +524,36 @@ def assign_point_blocks(points_xyv, gridspec: GridSpec, block_ids,
         except Exception:
             continue
 
+    tick = max(1, n // 50)
     for i, (x, y, _v) in enumerate(points_xyv):
+        if i % 256 == 0 and _is_canceled(feedback):
+            raise PreparationCanceled()
         pt = QgsGeometry.fromPointXY(QgsPointXY(float(x), float(y)))
         try:
-            if any(e.contains(pt.constGet()) for e in poly_engines):
-                continue
+            inside_poly = any(e.contains(pt.constGet()) for e in poly_engines)
         except Exception:
-            pass
-        on_fault = False
-        for g in lines:
-            try:
-                if g.distance(pt) <= tol:
-                    on_fault = True
-                    break
-            except Exception:
-                continue
-        if on_fault:
-            continue
-        col = int(np.floor((float(x) - gridspec.xmin) / gridspec.step))
-        row = int(np.floor((gridspec.top_y - float(y)) / gridspec.step))
-        rc = min(max(row, 0), nrows - 1)
-        cc = min(max(col, 0), ncols - 1)
-        b = int(block_ids[rc, cc])
-        if b == 0:
-            continue
-        point_blocks[i] = b
-        point_valid[i] = True
+            inside_poly = False
+        if not inside_poly:
+            on_fault = False
+            for g in lines:
+                try:
+                    if g.distance(pt) <= tol:
+                        on_fault = True
+                        break
+                except Exception:
+                    continue
+            if not on_fault:
+                col = int(np.floor((float(x) - gridspec.xmin) / gridspec.step))
+                row = int(np.floor((gridspec.top_y - float(y)) / gridspec.step))
+                rc = min(max(row, 0), nrows - 1)
+                cc = min(max(col, 0), ncols - 1)
+                b = int(block_ids[rc, cc])
+                if b != 0:
+                    point_blocks[i] = b
+                    point_valid[i] = True
+        if i % tick == 0:
+            _set_progress(feedback, progress_base + progress_span * (i + 1) / n)
+    _set_progress(feedback, progress_base + progress_span)
     return point_blocks, point_valid
 
 

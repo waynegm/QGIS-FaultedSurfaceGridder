@@ -1,8 +1,14 @@
 import numpy as np
 from qgis.core import QgsGeometry, QgsPointXY
 
+from faulted_surface_gridder.algorithms.gridding_context import (
+    is_canceled,
+    prepare_faulted_grid,
+    same_block_candidates,
+)
 from faulted_surface_gridder.algorithms.helpers import (
     GridSpec,
+    PreparationCanceled,
     assign_point_blocks,
     build_fault_blocks,
     fault_between,
@@ -98,3 +104,68 @@ def test_points_inside_polygon_or_on_trace_excluded():
         [], poly,
     )
     assert list(valid) == [False, True]
+
+
+def test_prepare_faulted_grid_empty_points():
+    spec = GridSpec(0, 0, 10, 10, 1.0)
+    ctx = prepare_faulted_grid(spec, [], [_vline(5.0)], [])
+    assert ctx.points.shape == (0, 3)
+    assert ctx.block_ids.shape == (spec.nrows, spec.ncols)
+    assert same_block_candidates(ctx, 0, 0, 0.0, 10.0) == []
+
+
+def test_same_block_candidates_only_same_side():
+    spec = GridSpec(0, 0, 10, 10, 1.0)
+    pts = [(2.0, 5.0, 10.0), (2.0, 6.0, 10.0),
+           (8.0, 5.0, 20.0), (8.0, 6.0, 20.0)]
+    ctx = prepare_faulted_grid(spec, pts, [_vline(5.0)], [])
+    left = same_block_candidates(ctx, 5, 2, 2.0, 5.0)
+    assert sorted(left) == [0, 1]
+    assert same_block_candidates(ctx, 5, 5, 5.0, 5.0) == []  # on-trace NoData
+
+
+class FakeFeedback:
+    def __init__(self, cancel_after=None):
+        self.progresses = []
+        self.cancel_after = cancel_after
+        self.calls = 0
+
+    def setProgress(self, percent):
+        self.progresses.append(float(percent))
+
+    def isCanceled(self):
+        self.calls += 1
+        return self.cancel_after is not None and self.calls > self.cancel_after
+
+
+def test_prepare_reports_progress_in_range():
+    spec = GridSpec(0, 0, 10, 10, 1.0)
+    pts = [(2.0, 5.0, 10.0), (8.0, 5.0, 20.0)]
+    fb = FakeFeedback()
+    prepare_faulted_grid(spec, pts, [_vline(5.0)], [], feedback=fb)
+    assert fb.progresses, "expected progress updates during preparation"
+    assert all(0.0 <= p <= 100.0 for p in fb.progresses)
+    assert fb.progresses == sorted(fb.progresses), "progress must not go backwards"
+    assert fb.progresses[-1] == 100.0
+
+
+def test_prepare_canceled_aborts():
+    spec = GridSpec(0, 0, 10, 10, 1.0)
+    pts = [(float(x), 5.0, 1.0) for x in range(10)]
+    fb = FakeFeedback(cancel_after=0)  # canceled from the start
+    try:
+        prepare_faulted_grid(spec, pts, [_vline(5.0)], [], feedback=fb)
+    except PreparationCanceled:
+        pass
+    else:
+        raise AssertionError("expected PreparationCanceled")
+    assert is_canceled(fb) is True
+
+
+def test_impl_returns_nan_grid_when_canceled():
+    spec = GridSpec(0, 0, 10, 10, 1.0)
+    pts = [(2.0, 5.0, 10.0), (8.0, 5.0, 20.0)]
+    res = local_gridding_impl(
+        spec, pts, [_vline(5.0)], [], feedback=FakeFeedback(cancel_after=0)
+    )
+    assert np.isnan(res).all()

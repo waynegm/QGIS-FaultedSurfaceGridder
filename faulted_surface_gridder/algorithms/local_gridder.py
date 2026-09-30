@@ -39,7 +39,7 @@ class LocalGridder(QgsProcessingAlgorithm):
                 self.INPUT_POINTS,
                 "Horizon points (XYZ)",
                 [QgsProcessing.TypeVectorPoint],
-                optional=True,
+                optional=False,
             )
         )
         self.addParameter(
@@ -48,7 +48,7 @@ class LocalGridder(QgsProcessingAlgorithm):
                 "Point value field",
                 parentLayerParameterName=self.INPUT_POINTS,
                 allowMultiple=False,
-                optional=True,
+                optional=False,
             )
         )
         self.addParameter(

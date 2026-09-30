@@ -1,18 +1,24 @@
 import numpy as np
-from qgis.core import QgsGeometry, QgsPointXY
 
-from .helpers import (
-    assign_point_blocks,
-    build_fault_blocks,
-    build_point_spatial_index,
+from .gridding_context import (
+    is_canceled,
+    prepare_faulted_grid,
+    same_block_candidates,
 )
+from .helpers import PreparationCanceled
+
+# Setup (fault rasterization + point assignment + index) owns the first
+# slice of the progress bar; the interpolation loop owns the rest.
+SETUP_END = 20.0
 
 
-def _cancelled(feedback) -> bool:
+def _set_progress(feedback, percent: float):
+    if feedback is None:
+        return
     try:
-        return bool(feedback and feedback.isCanceled())
+        feedback.setProgress(min(100.0, max(0.0, float(percent))))
     except Exception:
-        return False
+        pass
 
 
 def local_gridding_impl(gridspec, points_xyv, fault_line_geoms, fault_poly_geoms,
@@ -24,46 +30,33 @@ def local_gridding_impl(gridspec, points_xyv, fault_line_geoms, fault_poly_geoms
     Cells inside fault polygons or within step/2 of a fault trace stay NaN.
     Only samples sharing the node's fault-block id contribute.
     Search radius is unchanged: one grid step.
+    Returns an all-NaN grid if preparation is canceled.
     """
-    pts = np.asarray(list(points_xyv) if not isinstance(points_xyv, np.ndarray)
-                     else points_xyv, dtype=float).reshape(-1, 3) \
-        if len(points_xyv) else np.empty((0, 3))
-    nodes_x, nodes_y = gridspec.nodes()
-    results = np.full(nodes_x.shape, dtype=float, fill_value=np.nan)
-
-    blocks = build_fault_blocks(gridspec, fault_line_geoms, fault_poly_geoms)
-    block_ids = blocks["block_ids"]
-    nodata_mask = blocks["nodata_mask"]
-
-    if pts.shape[0] == 0:
+    if feedback is not None:
+        feedback.pushInfo('Local interpolation')
+    try:
+        ctx = prepare_faulted_grid(
+            gridspec, points_xyv, fault_line_geoms, fault_poly_geoms,
+            feedback=feedback, progress_base=0.0, progress_end=SETUP_END,
+        )
+    except PreparationCanceled:
+        return np.full((gridspec.nrows, gridspec.ncols), np.nan)
+    results = np.full(ctx.nodes_x.shape, dtype=float, fill_value=np.nan)
+    if len(ctx.points) == 0:
+        _set_progress(feedback, 100.0)
         return results
+    nrows = ctx.nodes_x.shape[0]
 
-    point_blocks, point_valid = assign_point_blocks(
-        pts, gridspec, block_ids, fault_line_geoms, fault_poly_geoms
-    )
-    spatial_index = build_point_spatial_index(pts)
-    nrows = nodes_x.shape[0]
-
-    for i in range(nodes_x.shape[0]):
-        if _cancelled(feedback):
+    for i in range(ctx.nodes_x.shape[0]):
+        if is_canceled(feedback):
             break
-        for j in range(nodes_x.shape[1]):
-            if nodata_mask[i, j]:
-                continue
-            node_x = nodes_x[i, j]
-            node_y = nodes_y[i, j]
-            bbox = QgsGeometry.fromPointXY(
-                QgsPointXY(node_x, node_y)).boundingBox().buffered(gridspec.step)
-            candidate_ids = spatial_index.intersects(bbox)
-            if not candidate_ids:
-                continue
-            node_block = int(block_ids[i, j])
-            same = [pid for pid in candidate_ids
-                    if 0 <= pid < len(pts) and point_valid[pid]
-                    and point_blocks[pid] == node_block]
+        for j in range(ctx.nodes_x.shape[1]):
+            node_x = ctx.nodes_x[i, j]
+            node_y = ctx.nodes_y[i, j]
+            same = same_block_candidates(ctx, i, j, node_x, node_y)
             if not same:
                 continue
-            data = pts[same]
+            data = ctx.points[same]
             local_coords = data[:, :2]
             local_V = data[:, 2]
             dx = local_coords[:, 0] - node_x
@@ -73,9 +66,5 @@ def local_gridding_impl(gridspec, points_xyv, fault_line_geoms, fault_poly_geoms
             nz = distances != 0
             weights[nz] = np.tanh(distances[nz]) / distances[nz]
             results[i, j] = np.sum(local_V * weights) / np.sum(weights)
-        if feedback is not None and nrows:
-            try:
-                feedback.setProgress(int(100 * (i + 1) / nrows))
-            except Exception:
-                pass
+        _set_progress(feedback, SETUP_END + (100.0 - SETUP_END) * (i + 1) / nrows)
     return results
