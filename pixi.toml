@@ -1,0 +1,22 @@
+[workspace]
+channels = ["conda-forge"]
+name = "WMPlugins"
+platforms = ["linux-64", "win-64"]
+version = "1.0"
+description = "Pixi setup for QGIS-FaultdSurfaceGridder plugin development and testing"
+
+[dependencies]
+python = ">=3.12"
+ipykernel = "*"
+qgis = "*"
+numpy = "*"
+pytest = "*"
+scipy = "*"
+
+
+[tasks.qgis]
+cmd = "qgis"
+env = {QT_SCALE_FACTOR_ROUNDING_POLICY = "Round", QT_AUTO_SCREEN_SCALE_FACTOR = "0", QT_SCREEN_SCALE_FACTORS = "1", QT_QPA_PLATFORM = "xcb" }
+
+[tasks.pytest]
+cmd = "python -m pytest"

@@ -4,8 +4,6 @@ from .provider import FaultedSurfaceGridderProvider
 
 
 class FaultedSurfaceGriddingPlugin:
-    """QGIS plugin wrapper. Owns the Processing provider registration."""
-
     def __init__(self, iface):
         self.iface = iface
         self.provider = None
@@ -16,7 +14,6 @@ class FaultedSurfaceGriddingPlugin:
         QgsApplication.processingRegistry().addProvider(self.provider)
 
     def initGui(self):
-        # Called by QGIS when the plugin is enabled.
         self.initProcessing()
 
     def unload(self):
