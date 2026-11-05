@@ -14,6 +14,13 @@ from qgis.core import (
 
 @dataclass
 class GridSpec:
+    """Node-centred regular grid.
+
+    Node ``(row, col)`` is at ``xmin + col*step`` and
+    ``top_y - row*step``; ``top_y`` is derived from ``nrows``, so the lattice
+    spans the requested extent up to the last node.
+    """
+
     xmin: float
     ymin: float
     ncols: int
@@ -47,10 +54,18 @@ def get_gridspec(algo: QgsProcessingAlgorithm, parameters, context, feedback):
     step = algo.parameterAsDouble(parameters, algo.GRID_STEP, context)
     if extent.isEmpty() or step <= 0:
         raise QgsProcessingException("Invalid extent or grid step.")
-    ncols = max(1, int(np.ceil((extent.xMaximum() - extent.xMinimum()) / step)))
-    nrows = max(1, int(np.ceil((extent.yMaximum() - extent.yMinimum()) / step)))
+    # Grid values live at nodes: the first node is at the extent's lower-left
+    # corner and nodes continue at `step` intervals until the far edge is
+    # enclosed.  The ``- 1e-9`` tolerance avoids an extra node from floating
+    # point error when the extent is an exact multiple of the step.
+    width = extent.xMaximum() - extent.xMinimum()
+    height = extent.yMaximum() - extent.yMinimum()
+    ncols = max(2, int(np.ceil(width / step - 1e-9)) + 1)
+    nrows = max(2, int(np.ceil(height / step - 1e-9)) + 1)
     gridspec = GridSpec(extent.xMinimum(), extent.yMinimum(), ncols, nrows, step)
-    feedback.pushInfo(f"Grid: {gridspec.ncols} x {gridspec.nrows} @ {step}")
+    feedback.pushInfo(
+        f"Grid: {gridspec.ncols} x {gridspec.nrows} nodes @ {step}"
+    )
     return gridspec, grid_crs
 
 def _get_vector_layer(algo, param_key, parameters, context, target_crs, feedback) -> QgsVectorLayer|None:

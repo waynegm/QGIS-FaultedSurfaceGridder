@@ -271,12 +271,42 @@ def test_process_algorithm_writes_fault_split(tmp_path):
     fault = _line_layer(["LINESTRING (4 0, 4 8)"])
     result = _run_algorithm(tmp_path, points, FAULT_LINES=fault)
 
-    assert result[1, 1] == pytest.approx(10.0)
-    assert result[1, 3] == pytest.approx(20.0)
-    assert np.isnan(result[1, 2])
+    # Extent 0..8 with step 2 gives 5x5 nodes, y = 8,6,4,2,0.
+    assert result.shape == (5, 5)
+    assert result[2, 1] == pytest.approx(10.0)
+    assert result[2, 3] == pytest.approx(20.0)
+    assert np.isnan(result[2, 2])
     # The bottom row is more than one step from every sample.
-    assert np.isnan(result[3, 0])
-    assert np.isnan(result[3, 3])
+    assert np.isnan(result[4, 0])
+    assert np.isnan(result[4, 3])
+
+
+def test_process_algorithm_georeferences_node_centres(tmp_path):
+    from osgeo import gdal
+
+    points = _point_layer(
+        [
+            (0.0, 0.0, 10.0),
+            (0.0, 8.0, 10.0),
+            (8.0, 0.0, 10.0),
+            (8.0, 8.0, 10.0),
+        ]
+    )
+    _run_algorithm(tmp_path, points)
+
+    dataset = gdal.Open(str(tmp_path / "grid.tif"))
+    transform = dataset.GetGeoTransform()
+    expected = GridSpec(0.0, 0.0, 5, 5, 2.0)
+    node_x, node_y = expected.nodes()
+
+    assert dataset.RasterXSize == expected.ncols
+    assert dataset.RasterYSize == expected.nrows
+    for c in range(expected.ncols):
+        centre_x = transform[0] + (c + 0.5) * transform[1]
+        assert centre_x == pytest.approx(node_x[0, c])
+    for r in range(expected.nrows):
+        centre_y = transform[3] + (r + 0.5) * transform[5]
+        assert centre_y == pytest.approx(node_y[r, 0])
 
 
 def test_process_algorithm_writes_heave_nodata_and_hull_clip(tmp_path):
@@ -298,13 +328,16 @@ def test_process_algorithm_writes_heave_nodata_and_hull_clip(tmp_path):
     )
 
     # The heave polygon's corner nodes become NoData.
-    assert np.isnan(result[1, 1])
-    assert np.isnan(result[1, 2])
     assert np.isnan(result[2, 1])
     assert np.isnan(result[2, 2])
+    assert np.isnan(result[3, 1])
+    assert np.isnan(result[3, 2])
     # Nodes outside the heave polygon are still interpolated.
-    assert result[0, 0] == pytest.approx(10.0)
-    assert result[3, 3] == pytest.approx(10.0)
+    assert result[1, 1] == pytest.approx(10.0)
+    assert result[4, 1] == pytest.approx(10.0)
+    # Nodes above the samples' convex hull are clipped to NoData.
+    assert np.isnan(result[0, 0])
+    assert np.isnan(result[0, 4])
 
 
 def test_no_valid_points_returns_all_nan(gridspec):

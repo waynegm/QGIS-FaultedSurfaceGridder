@@ -241,10 +241,26 @@ def generate_fault_masks(
     return fault_left, fault_up, heave_interior
 
 def write_geotiff(path, array, spec, crs):
+    """Write a node-centred grid as a GeoTIFF.
+
+    Grid values are samples at ``GridSpec.nodes()``.  A GeoTIFF cell is
+    registered by its top-left corner, so the transform is shifted by half a
+    cell: each output pixel centre then falls exactly on a grid node.
+    """
     os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
     driver = gdal.GetDriverByName("GTiff")
     ds = driver.Create(path, spec.ncols, spec.nrows, 1, gdal.GDT_Float32)
-    ds.SetGeoTransform([spec.xmin, spec.step, 0.0, spec.top_y, 0.0, -spec.step])
+    half_step = spec.step / 2.0
+    ds.SetGeoTransform(
+        [
+            spec.xmin - half_step,
+            spec.step,
+            0.0,
+            spec.top_y + half_step,
+            0.0,
+            -spec.step,
+        ]
+    )
     if crs.isValid():
         ds.SetProjection(crs.toWkt())
     band = ds.GetRasterBand(1)
