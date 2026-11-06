@@ -1,8 +1,9 @@
 [general]
 name=Faulted Surface Gridding
-qgisMinimumVersion=3.34
+qgisMinimumVersion=3.40
 qgisMaximumVersion=4.99
 description=Scattered point interpolation of geological/geophysical horizons to a regular grid with fault constraints
+about=Interpolates scattered horizon points across faulted surfaces using local gridding and optional multi-scale iterative refinement. The Iterative Gridding algorithm requires SciPy in QGIS's Python environment; on Windows run "<QGIS install>\bin\python-qgis-ltr.bat" -m pip install scipy from an elevated Command Prompt and restart QGIS.
 version=1.0.0
 author=Wayne Mogg
 email=wayne.mogg@gmail.com
