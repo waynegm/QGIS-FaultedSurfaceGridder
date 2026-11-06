@@ -116,7 +116,7 @@ def add_common_parameters(algo: QgsProcessingAlgorithm) -> None:
         QgsProcessingParameterBoolean(
             algo.CLIP_TO_HULL,
             "Clip output to convex hull of input samples",
-            False,
+            True,
         )
     )
     algo.addParameter(
