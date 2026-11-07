@@ -9,4 +9,6 @@ author=Wayne Mogg
 email=wayne.mogg@gmail.com
 category=Raster
 repository=https://github.com/waynegm/QGIS-FaultedSurfaceGridder
+tracker=https://github.com/waynegm/QGIS-FaultedSurfaceGridder/issues/
+homepage=https://github.com/waynegm/QGIS-FaultedSurfaceGridder/blob/main/README.md
 hasProcessingProvider=True
