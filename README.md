@@ -1,7 +1,7 @@
 # Faulted Surface Gridding
 
-A QGIS Processing plugin for interpolating scattered horizon points onto a
-regular grid while respecting fault discontinuities.
+A QGIS version 3.40+/4 processing plugin for interpolating scattered seismic horizon points onto a
+regular grid with fault lines and polygons.
 
 The plugin provides two algorithms:
 
@@ -13,6 +13,9 @@ The plugin provides two algorithms:
 
 Both write a node-centred GeoTIFF with `NaN` as the NoData value.
 
+![Screenshot showing iterative gridding output](images/Screenshot_20261107_142011.png)
+![Screenshot showing gridding dialog](images/Screenshot_20261107_142140.png)
+
 ## Requirements
 
 - **QGIS 3.40 or newer** (3.40+ and 4.x are supported;
@@ -21,19 +24,18 @@ Both write a node-centred GeoTIFF with `NaN` as the NoData value.
 - **SciPy** – required by **Iterative Gridding** only.
   **Local Gridding** works without it.
 
-### Installing SciPy into QGIS's Python
+## Installing SciPy into QGIS's Python
 
-SciPy is not bundled with QGIS. Install it into the Python interpreter QGIS
-uses, not into a separate system Python or virtual environment, then restart
-QGIS.
+SciPy is not bundled with QGIS. Install it into the Python interpreter that QGIS
+uses then restart QGIS.
 
-**Windows – OSGeo4W install (recommended, cleanest):**
+### Windows – OSGeo4W install
 
 1. Run **OSGeo4W Setup** → *Advanced Install*.
 2. Search for **`python3-scipy`** (category *Libs*) and install it.
 3. Restart QGIS.
 
-**Windows – standalone QGIS installer:**
+### Windows – standalone QGIS installer
 
 Open an elevated Command Prompt and run:
 
@@ -48,7 +50,7 @@ For a per-user install, add `--user`. If pip is missing:
 "C:\Program Files\QGIS 3.40.0\bin\python-qgis-ltr.bat" -m ensurepip --upgrade
 ```
 
-**Linux:**
+### Linux
 
 Use your distribution package, for example:
 
@@ -63,7 +65,7 @@ For the Flatpak build, see the QGIS installation guide for the
 `flatpak run --devel --command=pip3 org.qgis.qgis install scipy --user`
 workaround.
 
-**macOS:**
+### macOS
 
 QGIS ships its own Python. Install into that interpreter rather than a
 separate system Python, for example:
@@ -74,30 +76,12 @@ separate system Python, for example:
 
 See QGIS's installation guide for the exact path for your build.
 
-**Conda/mamba QGIS:**
-
-```bash
-micromamba install -c conda-forge scipy
-```
-
-Verify the installation:
-
-```bat
-"C:\Program Files\QGIS 3.40.0\bin\python-qgis-ltr.bat" -c "import scipy; print(scipy.__version__)"
-```
-
 > **Note:** `pip install scipy` can upgrade NumPy and affect other packages in
 > the QGIS environment. The OSGeo4W `python3-scipy` package avoids that risk.
 
 ## Installation
 
-### From a ZIP file
-
-1. Build or obtain `faulted_surface_gridder-<version>.zip`.
-2. In QGIS open **Plugins → Manage and Install Plugins → Install from ZIP**.
-3. Select the ZIP and click **Install Plugin**.
-4. Enable the plugin if it is not enabled automatically.
-
+### Make a ZIP file
 The ZIP must contain a single top-level folder with `metadata.txt` and
 `__init__.py` inside it:
 
@@ -111,10 +95,6 @@ faulted_surface_gridder/
     └── ...
 ```
 
-Do **not** zip the *contents* of the folder directly. QGIS locates the plugin
-by finding `metadata.txt` inside the archive and uses its parent directory as
-the plugin name.
-
 Build a clean ZIP from the repository root:
 
 ```bash
@@ -122,6 +102,13 @@ mkdir -p dist
 zip -r dist/faulted_surface_gridder-1.0.0.zip faulted_surface_gridder \
   -x '*/__pycache__/*' '*.pyc' '*.pyo' '*/.DS_Store'
 ```
+
+### From a ZIP file
+
+1. Build or obtain `faulted_surface_gridder-<version>.zip`.
+2. In QGIS open **Plugins → Manage and Install Plugins → Install from ZIP**.
+3. Select the ZIP and click **Install Plugin**.
+4. Enable the plugin if it is not enabled automatically.
 
 ### From source (development)
 
