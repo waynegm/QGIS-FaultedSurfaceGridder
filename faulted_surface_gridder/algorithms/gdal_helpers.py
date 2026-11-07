@@ -95,25 +95,6 @@ def _resolve_ogr_layer(source) -> tuple[ogr.Layer | None, object | None]:
     return None, None
 
 
-def _get_polygon_boundaries(layer: ogr.Layer) -> ogr.Layer:
-    """Extracts line boundaries from a polygon layer into an in-memory OGR layer."""
-    driver = _vector_memory_driver()
-    ds = driver.CreateDataSource(f"mem_boundary_{id(layer)}")
-    out_layer = ds.CreateLayer("boundaries", geom_type=ogr.wkbMultiLineString)
-
-    layer.ResetReading()
-    for feat in layer:
-        geom = feat.GetGeometryRef()
-        if geom:
-            boundary = geom.GetBoundary()
-            if boundary and not boundary.IsEmpty():
-                new_feat = ogr.Feature(out_layer.GetLayerDefn())
-                new_feat.SetGeometry(boundary)
-                out_layer.CreateFeature(new_feat)
-
-    out_layer._ds_ref = ds
-    return out_layer
-
 def rasterize_heave_interior(
     fault_polygon_source: str | Path | ogr.Layer | object | None,
     gridspec: GridSpec,
@@ -144,101 +125,6 @@ def rasterize_heave_interior(
     ds = heave_ds = None
     return mask
 
-
-def generate_fault_masks(
-    fault_line_source: str | Path | ogr.Layer | object | None,
-    fault_polygon_source: str | Path | ogr.Layer | object | None,
-    gridspec: GridSpec,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """
-    Rasterises both fault lines and fault heave polygons using GDAL/OGR.
-
-    Returns:
-    - fault_left: Combined vertical edge constraints (shape: rows x cols)
-    - fault_up: Combined horizontal edge constraints (shape: rows x cols)
-    - heave_interior: 2D boolean mask of heave zones (shape: rows x cols)
-    """
-
-    minx = gridspec.origin_x
-    maxy = gridspec.top_y
-    rows = gridspec.nrows
-    cols = gridspec.ncols
-    dx = gridspec.step
-    dy = gridspec.step
-
-    mem_driver = gdal.GetDriverByName("MEM")
-
-    # Pre-allocate master arrays
-    fault_left = np.zeros((rows, cols), dtype=bool)
-    fault_up = np.zeros((rows, cols), dtype=bool)
-    heave_interior = np.zeros((rows, cols), dtype=bool)
-
-    # -------------------------------------------------------------------------
-    # STEP 1: Process Fault Heave Polygons
-    # -------------------------------------------------------------------------
-    heave_ogr, heave_ds = _resolve_ogr_layer(fault_polygon_source)
-    if heave_ogr:
-        # A. Cell Interior Mask
-        ds_int = mem_driver.Create("", cols, rows, 1, gdal.GDT_Byte)
-        ds_int.SetGeoTransform([minx, dx, 0, maxy, 0, -dy])
-        gdal.RasterizeLayer(
-            ds_int, [1], heave_ogr, burn_values=[1], options=["ALL_TOUCHED=FALSE"]
-        )
-        heave_interior = ds_int.GetRasterBand(1).ReadAsArray().astype(bool)
-
-        boundary_layer = _get_polygon_boundaries(heave_ogr)
-        # B. Vertical Edges
-        ds_l = mem_driver.Create("", cols, rows, 1, gdal.GDT_Byte)
-        ds_l.SetGeoTransform([minx, dx, 0, maxy, 0, -dy])
-        heave_ogr.ResetReading()
-        gdal.RasterizeLayer(
-            ds_l, [1], boundary_layer, burn_values=[1], options=["ALL_TOUCHED=TRUE"]
-        )
-        fault_left |= ds_l.GetRasterBand(1).ReadAsArray().astype(bool)
-
-        # C. Horizontal Edges
-        ds_u = mem_driver.Create("", cols, rows, 1, gdal.GDT_Byte)
-        ds_u.SetGeoTransform([minx, dx, 0, maxy, 0, -dy])
-        heave_ogr.ResetReading()
-        gdal.RasterizeLayer(
-            ds_u, [1], boundary_layer, burn_values=[1], options=["ALL_TOUCHED=TRUE"]
-        )
-        fault_up |= ds_u.GetRasterBand(1).ReadAsArray().astype(bool)
-
-        ds_int = ds_l = ds_u = heave_ds = None
-
-    # -------------------------------------------------------------------------
-    # STEP 2: Process Thin Fault Lines
-    # -------------------------------------------------------------------------
-    line_ogr, line_ds = _resolve_ogr_layer(fault_line_source)
-    if line_ogr:
-        # A. Vertical Edges
-        ds_l = mem_driver.Create("", cols, rows, 1, gdal.GDT_Byte)
-        ds_l.SetGeoTransform([minx, dx, 0, maxy, 0, -dy])
-        line_ogr.ResetReading()
-        gdal.RasterizeLayer(
-            ds_l, [1], line_ogr, burn_values=[1], options=["ALL_TOUCHED=TRUE"]
-        )
-        fault_left |= ds_l.GetRasterBand(1).ReadAsArray().astype(bool)
-
-        # B. Horizontal Edges
-        ds_u = mem_driver.Create("", cols, rows, 1, gdal.GDT_Byte)
-        ds_u.SetGeoTransform([minx, dx, 0, maxy, 0, -dy])
-        line_ogr.ResetReading()
-        gdal.RasterizeLayer(
-            ds_u, [1], line_ogr, burn_values=[1], options=["ALL_TOUCHED=TRUE"]
-        )
-        fault_up |= ds_u.GetRasterBand(1).ReadAsArray().astype(bool)
-
-        ds_l = ds_u = line_ds = None
-
-    # -------------------------------------------------------------------------
-    # STEP 3: Enforce Structural Boundary Integrity
-    # -------------------------------------------------------------------------
-    fault_left[:, 0] = False
-    fault_up[0, :] = False
-
-    return fault_left, fault_up, heave_interior
 
 def write_geotiff(path, array, spec, crs):
     """Write a node-centred grid as a GeoTIFF.

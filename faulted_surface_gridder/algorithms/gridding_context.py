@@ -57,10 +57,7 @@ class GriddingInputs:
 class GridLevel:
     """Fault topology and locally gridded values for one grid resolution."""
 
-    gridspec: GridSpec
     blocks: FaultBlocks
-    point_blocks: np.ndarray
-    heave_mask: np.ndarray
     nodata_mask: np.ndarray
     local_grid: np.ndarray
 
@@ -231,10 +228,7 @@ def prepare_grid_level(
     )
 
     return GridLevel(
-        gridspec=gridspec,
         blocks=blocks,
-        point_blocks=point_blocks,
-        heave_mask=heave_mask,
         nodata_mask=nodata_mask,
         local_grid=local_grid,
     )

@@ -8,4 +8,5 @@ version=1.0.0
 author=Wayne Mogg
 email=wayne.mogg@gmail.com
 category=Raster
+repository=https://github.com/waynegm/QGIS-FaultedSurfaceGridder
 hasProcessingProvider=True

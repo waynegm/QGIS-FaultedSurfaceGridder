@@ -32,10 +32,6 @@ class GridSpec:
         return self.xmin
 
     @property
-    def origin_y(self) -> float:
-        return self.ymin
-
-    @property
     def top_y(self) -> float:
         return (self.nrows-1)*self.step+self.ymin
 
