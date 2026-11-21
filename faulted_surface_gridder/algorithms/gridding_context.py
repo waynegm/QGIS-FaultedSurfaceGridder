@@ -198,6 +198,7 @@ def prepare_grid_level(
         inputs.fault_lines,
         heave_mask,
         feedback=feedback,
+        heave_polygons_layer=inputs.fault_polygons,
     )
     point_blocks = assign_point_blocks(
         inputs.samples.xs,

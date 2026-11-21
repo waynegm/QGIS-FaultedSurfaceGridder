@@ -4,6 +4,7 @@ import numpy as np
 from qgis import processing
 from qgis.core import (
     QgsGeometry,
+    QgsMapLayer,
     QgsPointXY,
     QgsProcessingAlgorithm,
     QgsProcessingException,
@@ -77,7 +78,17 @@ def _get_vector_layer(algo, param_key, parameters, context, target_crs, feedback
             'OUTPUT': 'TEMPORARY_OUTPUT'
         }
         result = processing.run("native:reprojectlayer", reproject_params, context=context, feedback=feedback)
-        return context.getMapLayer(result['OUTPUT'])
+        output = result['OUTPUT']
+        # QGIS returns temporary outputs as map layers, while older releases
+        # return a layer ID string that must be resolved through the context.
+        if isinstance(output, QgsMapLayer):
+            return output
+        layer = context.getMapLayer(output)
+        if layer is None:
+            raise QgsProcessingException(
+                f"Could not load reprojected {param_key} layer"
+            )
+        return layer
     else:
         return src
 

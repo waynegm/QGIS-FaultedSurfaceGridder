@@ -67,6 +67,47 @@ def _iter_line_segments(layer: QgsVectorLayer):
                 )
 
 
+def _iter_polygon_segments(layer: QgsVectorLayer):
+    """Yield ``(x1, y1, x2, y2)`` for every polygon ring segment."""
+    if layer is None:
+        return
+    for feature in layer.getFeatures():
+        geom = feature.geometry()
+        if geom is None or geom.isEmpty():
+            continue
+        try:
+            if geom.isMultipart():
+                polygons = geom.asMultiPolygon()
+            else:
+                polygons = [geom.asPolygon()]
+        except Exception:
+            continue
+        for polygon in polygons:
+            if polygon is None:
+                continue
+            for ring in polygon:
+                if ring is None or len(ring) < 2:
+                    continue
+                for i in range(len(ring) - 1):
+                    p1 = ring[i]
+                    p2 = ring[i + 1]
+                    yield (
+                        float(p1.x()),
+                        float(p1.y()),
+                        float(p2.x()),
+                        float(p2.y()),
+                    )
+                if ring[0] != ring[-1]:
+                    p1 = ring[-1]
+                    p2 = ring[0]
+                    yield (
+                        float(p1.x()),
+                        float(p1.y()),
+                        float(p2.x()),
+                        float(p2.y()),
+                    )
+
+
 def _point_segment_distance(px, py, x1, y1, x2, y2):
     """Vectorised distance from points to one line segment."""
     dx = x2 - x1
@@ -84,12 +125,20 @@ def _mark_fault_nodes(
     gridspec: GridSpec,
     segments,
     feedback=None,
+    tolerance=None,
 ) -> int:
-    """Mark nodes lying on a fault trace.  Returns the number of segments."""
+    """Mark nodes within ``tolerance`` of a fault trace.
+
+    Returns the number of segments.  The default tolerance only hits nodes
+    exactly on the trace; a larger tolerance snaps the trace to a band of
+    nodes, which keeps a barrier continuous across a coarse grid.
+    """
     rows = gridspec.nrows
     cols = gridspec.ncols
     step = gridspec.step
     tol = max(step * 1e-6, 1e-9)
+    if tolerance is not None:
+        tol = max(float(tolerance), tol)
     node_x = gridspec.xmin + np.arange(cols) * step
     node_y = gridspec.top_y - np.arange(rows) * step
 
@@ -263,12 +312,18 @@ def build_fault_blocks(
     fault_lines_layer: QgsVectorLayer | None,
     heave_mask: np.ndarray | None = None,
     feedback=None,
+    heave_polygons_layer: QgsVectorLayer | None = None,
 ) -> FaultBlocks:
     """Build node barriers and fault-block labels from QGIS geometries.
 
     ``heave_mask`` is the rasterised polygon-interior cell mask.  Its cells are
     expanded to their corner nodes so the whole polygon interior, including its
     boundary nodes, is NoData.
+
+    ``heave_polygons_layer`` optionally supplies the polygons themselves.  The
+    polygon boundaries are marked as barrier nodes with a tolerance of 0.75 of
+    a grid step.  This keeps the barrier continuous when a heave polygon is
+    narrower than a grid cell and its interior misses every cell centre.
     """
     rows = gridspec.nrows
     cols = gridspec.ncols
@@ -288,6 +343,20 @@ def build_fault_blocks(
                 barrier[1:, 1:] |= heave[:-1, :-1]
         if rows > 1:
             barrier[1:, :] |= heave[:-1, :]
+
+    if heave_polygons_layer is not None:
+        boundary_segments = list(_iter_polygon_segments(heave_polygons_layer))
+        if boundary_segments:
+            # 0.75 * step exceeds the greatest distance from any point in a
+            # cell to its nearest node (step / sqrt(2)), so every boundary
+            # point lies within tolerance of at least one marked node.
+            _mark_fault_nodes(
+                barrier,
+                gridspec,
+                boundary_segments,
+                feedback=feedback,
+                tolerance=0.75 * gridspec.step,
+            )
 
     blocked_h = np.zeros((rows, max(cols - 1, 0)), dtype=bool)
     blocked_v = np.zeros((max(rows - 1, 0), cols), dtype=bool)

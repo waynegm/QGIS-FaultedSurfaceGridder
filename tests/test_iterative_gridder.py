@@ -1,6 +1,7 @@
 import numpy as np
 import pytest
 from qgis.core import (
+    QgsCoordinateReferenceSystem,
     QgsFeature,
     QgsGeometry,
     QgsPointXY,
@@ -361,8 +362,8 @@ def test_process_algorithm_respects_fault_split(tmp_path):
     np.testing.assert_allclose(result[:, 3:], 20.0, atol=1e-4)
 
 
-def _polygon_layer(wkts):
-    layer = QgsVectorLayer("Polygon?crs=EPSG:3857", "heave", "memory")
+def _polygon_layer(wkts, crs="EPSG:3857"):
+    layer = QgsVectorLayer(f"Polygon?crs={crs}", "heave", "memory")
     assert layer.isValid()
     features = []
     for wkt in wkts:
@@ -405,3 +406,78 @@ def test_process_algorithm_respects_heave_and_hull(tmp_path):
     assert np.isfinite(result[4, 1])
     np.testing.assert_allclose(result[1, 1], 10.0, atol=1e-4)
     np.testing.assert_allclose(result[4, 1], 10.0, atol=1e-4)
+
+
+def test_fault_polygons_are_reprojected_to_target_crs():
+    from faulted_surface_gridder.algorithms.helpers import (
+        get_fault_polygons_layer,
+    )
+    from faulted_surface_gridder.algorithms.local_gridder import LocalGridder
+
+    algorithm = LocalGridder()
+    algorithm.initAlgorithm()
+    polygons = _polygon_layer(
+        ["POLYGON ((0 0, 0.001 0, 0.001 0.001, 0 0.001, 0 0))"],
+        crs="EPSG:4326",
+    )
+    target_crs = QgsCoordinateReferenceSystem("EPSG:3857")
+
+    layer = get_fault_polygons_layer(
+        algorithm,
+        {LocalGridder.FAULT_POLYGONS: polygons},
+        QgsProcessingContext(),
+        target_crs,
+        QgsProcessingFeedback(),
+    )
+
+    assert layer is not None
+    assert layer.isValid()
+    assert layer.crs() == target_crs
+    assert layer.featureCount() == 1
+
+
+def test_process_algorithm_reprojects_fault_polygons(tmp_path):
+    points = _point_layer(
+        [(0.0, 0.0, 10.0), (0.0, 8.0, 10.0), (8.0, 0.0, 10.0), (8.0, 8.0, 10.0)]
+    )
+    # The same area as the grid, expressed in degrees (~1.5 m to ~6.5 m).
+    heave = _polygon_layer(
+        [
+            "POLYGON ((0.0000135 0.0000135, 0.0000584 0.0000135, "
+            "0.0000584 0.0000584, 0.0000135 0.0000584, "
+            "0.0000135 0.0000135))"
+        ],
+        crs="EPSG:4326",
+    )
+    result = _run_algorithm(tmp_path, points, FAULT_POLYGONS=heave)
+
+    # Nodes covered by the reprojected heave polygon are NoData.
+    assert np.isnan(result[1, 1])
+    assert np.isnan(result[2, 2])
+    assert np.isnan(result[3, 3])
+    assert np.isfinite(result[0, 0])
+    assert np.isfinite(result[4, 4])
+
+
+def test_process_algorithm_thin_heave_blocks_cross_fault_smoothing(tmp_path):
+    # Three points on each side of a heave sliver that is narrower than a
+    # grid cell and misses every cell centre (they lie at x = 1, 3, 5, 7).
+    points = _point_layer(
+        [
+            (2.0, 0.0, 10.0),
+            (2.0, 4.0, 10.0),
+            (2.0, 8.0, 10.0),
+            (8.0, 0.0, 20.0),
+            (8.0, 4.0, 20.0),
+            (8.0, 8.0, 20.0),
+        ]
+    )
+    heave = _polygon_layer(
+        ["POLYGON ((5.05 -1, 5.15 -1, 5.15 9, 5.05 9, 5.05 -1))"]
+    )
+    result = _run_algorithm(tmp_path, points, FAULT_POLYGONS=heave)
+
+    # The two sides stay at their own values; the fault is not smoothed over.
+    np.testing.assert_allclose(result[:, :2], 10.0, atol=1e-4)
+    np.testing.assert_allclose(result[:, 4:], 20.0, atol=1e-4)
+    assert np.isnan(result[:, 2:4]).all()
