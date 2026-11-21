@@ -98,10 +98,11 @@ faulted_surface_gridder/
 Build a clean ZIP from the repository root:
 
 ```bash
-mkdir -p dist
-zip -r dist/faulted_surface_gridder-1.0.0.zip faulted_surface_gridder \
-  -x '*/__pycache__/*' '*.pyc' '*.pyo' '*/.DS_Store'
+pixi run dist
 ```
+
+The archive is written to `dist/faulted_surface_gridder-<version>.zip`, where
+`<version>` is read from `faulted_surface_gridder/metadata.txt`.
 
 ### From a ZIP file
 
