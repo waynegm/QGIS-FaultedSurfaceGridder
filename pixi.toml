@@ -20,3 +20,7 @@ env = {QT_SCALE_FACTOR_ROUNDING_POLICY = "Round", QT_AUTO_SCREEN_SCALE_FACTOR = 
 
 [tasks.pytest]
 cmd = "python -m pytest"
+
+[tasks.dist]
+cmd = "python scripts/build_dist.py"
+description = "Build the QGIS plugin distribution zip"
