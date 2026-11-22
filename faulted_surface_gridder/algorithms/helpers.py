@@ -139,7 +139,11 @@ def convex_hull_nodata_mask(xs, ys, gridspec: GridSpec, feedback=None) -> np.nda
         [QgsPointXY(float(x), float(y)) for x, y in zip(xs, ys)]
     )
     hull = geom.convexHull()
-    if hull.isEmpty() or hull.type() != QgsWkbTypes.PolygonGeometry:
+    if (
+        hull.isEmpty()
+        or QgsWkbTypes.geometryType(hull.wkbType())
+        != QgsWkbTypes.GeometryType.PolygonGeometry
+    ):
         if feedback is not None:
             feedback.pushWarning(
                 "Convex hull clipping skipped: could not build a polygon hull"

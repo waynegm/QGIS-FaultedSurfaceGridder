@@ -72,7 +72,7 @@ def build_point_samples(
             or geom.isEmpty()
             or geom.isMultipart()
             or QgsWkbTypes.geometryType(geom.wkbType())
-            != QgsWkbTypes.PointGeometry
+            != QgsWkbTypes.GeometryType.PointGeometry
         ):
             continue
         point = geom.asPoint()

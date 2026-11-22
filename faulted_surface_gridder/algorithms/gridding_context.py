@@ -68,7 +68,7 @@ def add_common_parameters(algo: QgsProcessingAlgorithm) -> None:
         QgsProcessingParameterFeatureSource(
             algo.INPUT_POINTS,
             "Horizon points (XYZ)",
-            [QgsProcessing.TypeVectorPoint],
+            [QgsProcessing.SourceType.TypeVectorPoint],
             optional=False,
         )
     )
@@ -85,7 +85,7 @@ def add_common_parameters(algo: QgsProcessingAlgorithm) -> None:
         QgsProcessingParameterFeatureSource(
             algo.FAULT_LINES,
             "Fault traces (polylines, vertical faults)",
-            [QgsProcessing.TypeVectorLine],
+            [QgsProcessing.SourceType.TypeVectorLine],
             optional=True,
         )
     )
@@ -93,7 +93,7 @@ def add_common_parameters(algo: QgsProcessingAlgorithm) -> None:
         QgsProcessingParameterFeatureSource(
             algo.FAULT_POLYGONS,
             "Fault heave polygons (interiors become NoData)",
-            [QgsProcessing.TypeVectorPolygon],
+            [QgsProcessing.SourceType.TypeVectorPolygon],
             optional=True,
         )
     )
@@ -104,7 +104,7 @@ def add_common_parameters(algo: QgsProcessingAlgorithm) -> None:
         QgsProcessingParameterNumber(
             algo.GRID_STEP,
             "Grid size (layer units)",
-            QgsProcessingParameterNumber.Double,
+            QgsProcessingParameterNumber.Type.Double,
             defaultValue=100.0,
             minValue=0.0,
         )

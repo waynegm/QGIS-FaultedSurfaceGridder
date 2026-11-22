@@ -47,7 +47,8 @@ def _iter_line_segments(layer: QgsVectorLayer):
         if (
             geom is None
             or geom.isEmpty()
-            or QgsWkbTypes.geometryType(geom.wkbType()) != QgsWkbTypes.LineGeometry
+            or QgsWkbTypes.geometryType(geom.wkbType())
+            != QgsWkbTypes.GeometryType.LineGeometry
         ):
             continue
         if geom.isMultipart():
@@ -78,7 +79,7 @@ def _iter_polygon_segments(layer: QgsVectorLayer):
             geom is None
             or geom.isEmpty()
             or QgsWkbTypes.geometryType(geom.wkbType())
-            != QgsWkbTypes.PolygonGeometry
+            != QgsWkbTypes.GeometryType.PolygonGeometry
         ):
             continue
         if geom.isMultipart():

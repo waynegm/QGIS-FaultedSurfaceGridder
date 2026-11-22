@@ -81,7 +81,7 @@ class IterativeGridder(QgsProcessingAlgorithm):
             QgsProcessingParameterNumber(
                 self.ITERATIONS,
                 "Solver iterations at the finest scale",
-                QgsProcessingParameterNumber.Integer,
+                QgsProcessingParameterNumber.Type.Integer,
                 defaultValue=100,
                 minValue=1,
             )
@@ -90,7 +90,7 @@ class IterativeGridder(QgsProcessingAlgorithm):
             QgsProcessingParameterNumber(
                 self.SCALES,
                 "Multi-scale levels (0 = automatic)",
-                QgsProcessingParameterNumber.Integer,
+                QgsProcessingParameterNumber.Type.Integer,
                 defaultValue=0,
                 minValue=0,
             )
@@ -99,7 +99,7 @@ class IterativeGridder(QgsProcessingAlgorithm):
             QgsProcessingParameterNumber(
                 self.TOLERANCE,
                 "Solver tolerance",
-                QgsProcessingParameterNumber.Double,
+                QgsProcessingParameterNumber.Type.Double,
                 defaultValue=1e-6,
                 minValue=0.0,
             )
