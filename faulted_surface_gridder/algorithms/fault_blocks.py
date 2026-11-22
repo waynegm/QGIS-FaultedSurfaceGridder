@@ -16,7 +16,7 @@ from collections import deque
 from dataclasses import dataclass
 
 import numpy as np
-from qgis.core import QgsVectorLayer
+from qgis.core import QgsVectorLayer, QgsWkbTypes
 
 from .helpers import GridSpec
 
@@ -44,15 +44,16 @@ def _iter_line_segments(layer: QgsVectorLayer):
         return
     for feature in layer.getFeatures():
         geom = feature.geometry()
-        if geom is None or geom.isEmpty():
+        if (
+            geom is None
+            or geom.isEmpty()
+            or QgsWkbTypes.geometryType(geom.wkbType()) != QgsWkbTypes.LineGeometry
+        ):
             continue
-        try:
-            if geom.isMultipart():
-                parts = geom.asMultiPolyline()
-            else:
-                parts = [geom.asPolyline()]
-        except Exception:
-            continue
+        if geom.isMultipart():
+            parts = geom.asMultiPolyline()
+        else:
+            parts = [geom.asPolyline()]
         for part in parts:
             if part is None or len(part) < 2:
                 continue
@@ -73,15 +74,17 @@ def _iter_polygon_segments(layer: QgsVectorLayer):
         return
     for feature in layer.getFeatures():
         geom = feature.geometry()
-        if geom is None or geom.isEmpty():
+        if (
+            geom is None
+            or geom.isEmpty()
+            or QgsWkbTypes.geometryType(geom.wkbType())
+            != QgsWkbTypes.PolygonGeometry
+        ):
             continue
-        try:
-            if geom.isMultipart():
-                polygons = geom.asMultiPolygon()
-            else:
-                polygons = [geom.asPolygon()]
-        except Exception:
-            continue
+        if geom.isMultipart():
+            polygons = geom.asMultiPolygon()
+        else:
+            polygons = [geom.asPolygon()]
         for polygon in polygons:
             if polygon is None:
                 continue

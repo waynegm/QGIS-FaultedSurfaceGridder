@@ -17,6 +17,7 @@ from qgis.core import (
     QgsRectangle,
     QgsSpatialIndexKDBush,
     QgsVectorLayer,
+    QgsWkbTypes,
 )
 
 from .helpers import GridSpec
@@ -66,12 +67,15 @@ def build_point_samples(
             break
 
         geom = feature.geometry()
-        if geom is None or geom.isEmpty() or geom.isMultipart():
+        if (
+            geom is None
+            or geom.isEmpty()
+            or geom.isMultipart()
+            or QgsWkbTypes.geometryType(geom.wkbType())
+            != QgsWkbTypes.PointGeometry
+        ):
             continue
-        try:
-            point = geom.asPoint()
-        except Exception:
-            continue
+        point = geom.asPoint()
 
         try:
             value = feature[z_idx]
